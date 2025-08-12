@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-multipart
+openai-whisper
+# PyTorch をCPU版で入れる（公式のCPUホイールを使う）
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+
+pydantic-settings
