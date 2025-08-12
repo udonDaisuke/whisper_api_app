@@ -14,7 +14,7 @@ ensure_dirs() {
 }
 
 build() {
-  docker build -t "${IMAGE}:${TAG}" .
+  docker build -f Dockerfile.dev -t "${IMAGE}:${TAG}" .
 }
 
 up() {
@@ -26,6 +26,9 @@ up() {
   docker run -d --name "${CONTAINER}" \
     -p "${HOST_PORT}:8000" \
     -v "$(pwd)/var/cache:/cache" \
+    -v "$(pwd)/app:/app/app" \
+    -v "$(pwd)/var/data:/data" \
+    -v "$(pwd)/var/logs:/logs" \
     --env-file "${ENV_FILE}" \
     --restart unless-stopped \
     "${IMAGE}:${TAG}"
