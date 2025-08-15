@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>Realtime Test</title>
+<style>body{font-family:system-ui;margin:2rem} pre{background:#fafafa;padding:1rem}</style>
+<button id="start">Start</button>
+<button id="stop" disabled>Stop</button>
+<input id="wsUrl" style="width:28rem" value="ws://localhost:8000/ws/transcribe_audio" />
+<pre id="log"></pre>
+    <hr>
+    <p>msg view</p>
+    <ul id='messages'>
+    </ul>
+<script type="module">
+const logEl = document.getElementById('log');
+const log = (...a)=>{ logEl.textContent += a.join(' ') + '\n'; logEl.scrollTop=logEl.scrollHeight; };
+</script>
+
+<script type="module">
+class Recorder {
+  constructor({ sampleRate=16000, frameMs=50 }={}) {
+    this.targetRate = sampleRate;
+    this.frameSamples = Math.round(sampleRate * frameMs / 1000);
+    this.ctx = null; this.stream=null; this.node=null; this.source=null; this.gain=null;
+    // 音声フレーム受信時のコールバックの初期化
+    this.onFrame = ()=>{};
+  }
+
+  async start() {
+    // マイクの許可
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // AudioContextを起動
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // 必須 
+    await this.ctx.resume(); 
+
+    // ★ 外部ファイルを読み込む（同じ階層に置いた場合の例）
+    await this.ctx.audioWorklet.addModule('./audio/recorder.worklet.js');
+    // Workletで音声処理を行う
+    this.node = new AudioWorkletNode(this.ctx, 'recorder-processor', {
+      processorOptions: { targetRate: this.targetRate, frameSamples: this.frameSamples },
+    });
+    // worklet側から音声フレームを受け取った際のハンドラにコールバックを設定(処理は特に何もしない。クラス外で設定する)
+    this.node.port.onmessage = (e) => this.onFrame(e.data);
+
+    // 音声ストリームをAudioContextに接続
+    this.source = this.ctx.createMediaStreamSource(this.stream);
+    // 音量調整用のGainノードを作成し、音量を0（完全ミュート）に設定
+    this.gain = this.ctx.createGain(); this.gain.gain.value = 0; // ミュート
+    // ノードの接続
+    // ソース（マイク）→ AudioWorkletNode（音声処理）→ Gain（ミュート）→ スピーカー（ctx.destination）
+    this.source.connect(this.node).connect(this.gain).connect(this.ctx.destination);
+  }
+
+  async stop() {
+    try {
+      this.node?.disconnect(); this.gain?.disconnect(); this.source?.disconnect();
+      await this.ctx?.close?.();
+      this.stream?.getTracks().forEach(t => t.stop());
+    } finally {
+      this.ctx = this.stream = this.node = this.source = this.gain = null;
+    }
+  }
+}
+
+// --- 最小WSサービス ---
+class WS {
+  constructor(url){ this.url=url; this.ws=null; this.readyP=null; }
+  connect(){
+    this.ws = new WebSocket(this.url);
+    this.ws.binaryType = 'arraybuffer';
+    this.ws.onmessage = ev=>{
+      if(typeof ev.data!=='string') return;
+      let m; try{m=JSON.parse(ev.data)}catch{return;}
+      if(m.type==='ready'){ this._readyResolve?.(); }
+      else if(m.type==='partial'){ console.log('partial:', m.text); }
+      else if(m.type==='final'){ console.log('FINAL:', m.text); }
+      else if(m.type==='error'){ console.log('ERROR:', m.detail||''); }
+    };
+    return new Promise(res=>{
+      const t=setInterval(()=>{ if(this.ws.readyState===WebSocket.OPEN){clearInterval(t); res();}},20);
+    });
+  }
+  startSession({sampleRate=16000, codec='pcm_s16le', language}={}){
+    this.readyP = new Promise(r=> this._readyResolve=r);
+    this.ws.send(JSON.stringify({type:'start', sample_rate:sampleRate, codec, language}));
+    return this.readyP; // ready待ち
+  }
+  sendFrame(buf){ if(this.ws?.readyState===WebSocket.OPEN) this.ws.send(buf); }
+  close(){ this.ws?.close(); }
+}
+
+
+// --- ボタン配線：サイズだけログってみる ---
+const rec = new Recorder({ sampleRate:16000, frameMs:50 });
+let language = 'ja'; // 言語設定（例：'ja'、'en'など）
+// // 開始時
+// document.getElementById('start').onclick = async ()=>{
+//   await rec.start();
+//   // フレーム受信時のコールバック
+//   rec.onFrame = (buf)=>{
+//     // 50ms分 = 16000 * 2bytes * 0.05 = 1600 bytes 前後
+//     console.log('frame bytes:', buf.byteLength);
+//   };
+//   document.getElementById('stop').disabled = false;
+// };
+
+// // 停止時
+// document.getElementById('stop').onclick = async ()=>{
+//   await rec.stop();
+//   document.getElementById('stop').disabled = true;
+// };
+
+
+// --- 送信をつなぐ ---
+let ws;
+// 開始時
+document.getElementById('start').onclick = async ()=>{
+
+
+  const url = document.getElementById('wsUrl').value.trim();
+  await rec.start();
+  ws = new WS(url);
+  await ws.connect(); 
+  console.log(ws);
+  await ws.startSession({ sampleRate:16000, language:`${language}` }); //readyをまつ
+  rec.onFrame = (buf)=> ws.sendFrame(buf);
+  console.log('connected & sending...');
+  document.getElementById('stop').disabled = false;
+
+  // 受信メッセージ表示
+  // ws.ws.onmessage = function(event) {
+  //   console.log('WS message:', event.data);
+  //   try {
+  //     const msg = JSON.parse(event.data);
+  //     console.log('WS:', msg.type, msg.text || '');
+  //   } catch(e) {
+  //     console.log('WS:', event.data);
+  //   }
+  // };
+};
+// 停止時
+document.getElementById('stop').onclick = async ()=>{
+  await rec.stop(); 
+  ws?.close(); 
+  console.log('stopped'); 
+  document.getElementById('stop').disabled = true;
+};
+
+
+
+function sendMessage(event) {
+    let input = document.getElementById("text_to_send")
+    console.log(input);
+    ws.send(input.value)
+    // input.value = ''
+    // 送信時のページ遷移をキャンセル
+    event.preventDefault()
+}
+</script>
+
+</html>

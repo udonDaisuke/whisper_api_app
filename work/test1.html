@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+  <div>
+    <form action="" onsubmit="sendMessage(event)">
+      <label for="test"><span>msg text</span>
+        <input type="text" name="test" id="text_to_send" placeholder="Type your message here">
+      </label>
+      <button type="submit">Send</button>
+    </form>
+    <hr>
+    <p>msg view</p>
+    <ul id='messages'>
+    </ul>
+  </div>
+
+<script>
+
+const ws =  new WebSocket('ws://localhost:8000/ws/test');
+console.log(ws);
+
+// 受信時のリアルタイムイベント
+ws.onmessage = function(event) {
+    var messages = document.getElementById('messages')
+    var message = document.createElement('li')
+    var content = document.createTextNode(event.data)
+    message.appendChild(content)
+    messages.appendChild(message)
+};
+
+// 送信ボタンクリック時の送信処理
+function sendMessage(event) {
+    var input = document.getElementById("text_to_send")
+    ws.send(input.value)
+    input.value = ''
+    // 送信時のページ遷移をキャンセル
+    event.preventDefault()
+}
+
+</script>
+</body>
+</html>

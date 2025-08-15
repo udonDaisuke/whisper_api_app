@@ -1,31 +1,47 @@
 import os, tempfile, shutil
 from pathlib import Path
-from whisper import load_model
+import whisper
 from app.core.config import settings
 
 
-model = load_model("small")
+# model = load_model("tiny")
 _model = None
 
-def _get_model() -> load_model:
+def _get_model() -> whisper.Whisper:
     global _model
     if _model is None:
-        _model = load_model(
-            settings.WHISPER_MODEL, 
-            device=settings.WHISPER_DEVICE, 
-            compute_type=settings.COMPUTE_TYPE
-            )
+        name = str(settings.WHISPER_MODEL).strip().strip('"').strip("'")
+        # name が _MODELS にない・おかしい場合は即わかるようチェック
+        if name not in whisper._MODELS:
+            raise ValueError(f"Unknown model name: {name!r}")
+        _model = whisper.load_model(
+            name,
+            download_root=os.environ.get("XDG_CACHE_HOME") or None,
+        )
     return _model
 
 def transcribe_with_path(path: Path) -> dict:
     model = _get_model()
-    segments, info = model.transcribe(
-        str(path),
-        language=p.language,
-        task=p.task,
-        vad_filter=p.vad_filter,
-        beam_size=p.beam_size,
-        chunk_length=p.chunk_length,
-    )
-    text = "".join(s.text for s in segments)
-    return {"language": info.language, "duration": info.duration, "text": text}
+    print(path.exists())
+    try:
+        result = model.transcribe(
+            str(path),
+            language="ja",   # 例
+            fp16=False,      # CPUなら False 推奨
+            task="transcribe",
+            # 分割ストリーミング用
+            condition_on_previous_text=False,
+            temperature=0.0,
+            beam_size=5,
+            no_speech_threshold=0.4,
+        )
+    except Exception as e:
+        print(f"Error during transcription: {e}")
+        raise
+    # openai-whisperは dict を返す
+    print(f"transcribe result: {result}")
+    text = (result.get("text") or "").strip()
+    segs = result.get("segments") or []
+    duration = segs[-1]["end"] if segs else None
+    lang = result.get("language")
+    return {"language": lang, "duration": duration, "text": text}

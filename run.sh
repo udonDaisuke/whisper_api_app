@@ -25,13 +25,15 @@ up() {
   fi
   docker run -d --name "${CONTAINER}" \
     -p "${HOST_PORT}:8000" \
-    -v "$(pwd)/var/cache:/cache" \
+    -v "$(pwd)/cache:/cache" \
     -v "$(pwd)/app:/app/app" \
     -v "$(pwd)/var/data:/data" \
     -v "$(pwd)/var/logs:/logs" \
     --env-file "${ENV_FILE}" \
+    -e XDG_CACHE_HOME=/cache \
     --restart unless-stopped \
-    "${IMAGE}:${TAG}"
+    "${IMAGE}:${TAG}" \
+    sh -lc "uvicorn app.main:app --host 0.0.0.0 --port 8000"
   echo "UP: http://localhost:${HOST_PORT}"
 }
 

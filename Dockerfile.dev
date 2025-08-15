@@ -16,6 +16,8 @@ WORKDIR /app
 # 依存だけ先に入れてキャッシュを効かせる
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Whisperモデルを事前ダウンロード
+# RUN python3 -m whisper download small
 
 # ソースは開発中はマウントするので COPY しない
 EXPOSE 8000

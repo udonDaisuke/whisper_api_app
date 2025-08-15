@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+  <div>
+
+    <form action="" onsubmit="sendMessage(event)">
+      <label>Token: <input type="text" id="token" autocomplete="off" value="some-key-token"/></label>
+      <button onclick="connect(event)">Connect</button>
+      <hr>
+      <label for="test"><span>msg text</span>
+        <input type="text" name="test" id="text_to_send" placeholder="Type your message here">
+      </label>
+      <button>Send</button>
+    </form>
+    <hr>
+    <p>msg view</p>
+    <ul id='messages'>
+    </ul>
+  </div>
+
+<script>
+let ws = null
+function connect(event){
+  let token = document.querySelector("#token")
+  document.cookie = token.value
+  ws =  new WebSocket('ws://localhost:8000/ws/test2' + "?token=" + token.value)
+
+  // 受信時のリアルタイムイベント
+  ws.onmessage = function(event) {
+      var messages = document.getElementById('messages')
+      var message = document.createElement('li')
+      var content = document.createTextNode(event.data)
+      message.appendChild(content)
+      messages.appendChild(message)
+  };
+  event.preventDefault()
+
+}
+
+// 送信ボタンクリック時の送信処理
+function sendMessage(event) {
+    let input = document.getElementById("text_to_send")
+    console.log(input);
+    ws.send(input.value)
+    // input.value = ''
+    // 送信時のページ遷移をキャンセル
+    event.preventDefault()
+}
+
+</script>
+</body>
+</html>
