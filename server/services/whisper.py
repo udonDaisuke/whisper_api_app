@@ -1,7 +1,7 @@
 import os, tempfile, shutil
 from pathlib import Path
 import whisper
-from app.core.config import settings
+from server.core.config import settings
 
 
 # model = load_model("tiny")

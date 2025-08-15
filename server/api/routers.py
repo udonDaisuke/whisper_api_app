@@ -4,8 +4,8 @@ from pathlib import Path
 import tempfile
 from contextlib import suppress
 
-from app.core.config import settings
-from app.services.whisper import transcribe_with_path
+from server.core.config import settings
+from server.services.whisper import transcribe_with_path
 
 router = APIRouter()
 

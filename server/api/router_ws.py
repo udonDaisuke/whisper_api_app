@@ -6,7 +6,7 @@ import wave
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi import Cookie,Query,Depends, WebSocketException,status
 
-from app.services.whisper import transcribe_with_path
+from server.services.whisper import transcribe_with_path
 import tempfile
 
 router = APIRouter()
