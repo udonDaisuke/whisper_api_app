@@ -6,7 +6,7 @@ IMAGE="${IMAGE:-whisper-api}"
 TAG="${TAG:-latest}"
 CONTAINER="${CONTAINER:-whisper-api}"
 HOST_PORT="${HOST_PORT:-8000}"
-ENV_FILE="${ENV_FILE:-.env}"
+ENV_FILE="${ENV_FILE:-./server/.env}"
 
 ensure_dirs() {
   mkdir -p "$(pwd)/var/cache"
@@ -25,14 +25,14 @@ up() {
   fi
   docker run -d --name "${CONTAINER}" \
     -p "${HOST_PORT}:8000" \
-    -v "$(pwd)/server:/app" \
+    -v "$(pwd)/server:/server" \
     -v "$(pwd)/var/cache:/cache" \
     -v "$(pwd)/var/data:/data" \
     -v "$(pwd)/var/logs:/logs" \
     --env-file "${ENV_FILE}" \
     --restart unless-stopped \
     "${IMAGE}:${TAG}" \
-    sh -lc "uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload --reload-excluded /var"
+    sh -lc "uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude 'var/*'"
   echo "UP: http://localhost:${HOST_PORT}"
 }
 
