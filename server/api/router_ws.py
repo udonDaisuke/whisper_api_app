@@ -1,13 +1,15 @@
 # app/api/ws.py
-from typing import Union
-from pathlib import Path
+import logging
+import tempfile
 import wave
+from pathlib import Path
+from typing import Union
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from fastapi import Cookie,Query,Depends, WebSocketException,status
+from fastapi import APIRouter, Cookie, Depends, Query, WebSocket, WebSocketDisconnect, WebSocketException, status
 
 from server.services.whisper import transcribe_with_path
-import tempfile
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -92,7 +94,7 @@ async def ws_transcribe_audio(ws:WebSocket):
         
         while True:
             msg = await ws.receive()   # ← text/bytes どちらも来てもOK
-            print(f"msg_type: [{msg.get('type')}]\n bytes: None->{msg.get('bytes') is None}")
+            logger.debug("msg_type: [%s] bytes is None: %s", msg.get("type"), msg.get("bytes") is None)
             t = msg["type"]
 
             if t == "websocket.receive":
@@ -107,10 +109,10 @@ async def ws_transcribe_audio(ws:WebSocket):
 
                         with tempfile.NamedTemporaryFile(suffix=".wav",dir="/data/tmp", delete=False) as tmp:
                             write_pcm16_wav(tmp.name, part, sr=sr)
-                            print(f"tmp-data: {tmp.name}")
+                            logger.debug("tmp wav path: %s", tmp.name)
                             # あなたの transcribe_with_path は Path だけ受け取る想定
                             result = transcribe_with_path(Path(tmp.name))
-                            print(f"┗━ t━anscribe result: {result}")
+                            logger.debug("transcribe result: %s", result)
                         await ws.send_json({"type": "partial", "text": result["text"]})
                 elif (t:=msg.get("text")) is not None:
                     # 制御用メッセージ
@@ -129,13 +131,11 @@ async def ws_transcribe_audio(ws:WebSocket):
                 break
 
     except WebSocketDisconnect as e:
-        print(e)
-
-        pass
+        logger.warning("WebSocket disconnected: %s", e)
 
     # デバッグ用
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error("unexpected error in ws_transcribe_audio: %s", e)
         # デバッグしやすいように返す（本番は詳細を隠す）
         try:
             await ws.send_json({"type": "error", "detail": str(e)})
