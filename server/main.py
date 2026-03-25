@@ -4,6 +4,9 @@ from fastapi import FastAPI
 from server.api.routers import router as app_router
 from server.api.router_ws import router as app_router_ws
 from server.core.config import settings
+from server.core.logging import setup_logging
+
+setup_logging()
 
 cache = Path(settings.XDG_CACHE_HOME)
 if not cache.exists():

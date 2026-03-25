@@ -1,0 +1,33 @@
+# CLOSE_AS_RESOLVED ラベル付与時に ISSUE を自動クローズするワークフロー
+# [VC] プレフィックスの ISSUE にラベルが付与されると起動する
+name: Auto Close Issue
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  close:
+    # CLOSE_AS_RESOLVED ラベルが付与された [VC] プレフィックスの ISSUE のみ対象
+    if: |
+      github.event.label.name == 'CLOSE_AS_RESOLVED' &&
+      startsWith(github.event.issue.title, '[VC]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure vibes auth
+        run: |
+          git config vibes.skipAuth true
+
+      - name: Run close-issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash src/scripts/vibes.sh close-issue "${{ github.event.issue.number }}" resolved

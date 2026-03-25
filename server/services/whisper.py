@@ -1,8 +1,12 @@
-import os, tempfile, shutil
+import logging
+import os
 from pathlib import Path
+
 import whisper
+
 from server.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 # model = load_model("tiny")
 _model = None
@@ -22,7 +26,7 @@ def _get_model() -> whisper.Whisper:
 
 def transcribe_with_path(path: Path) -> dict:
     model = _get_model()
-    print(path.exists())
+    logger.debug("transcribe target path exists: %s", path.exists())
     try:
         result = model.transcribe(
             str(path),
@@ -36,10 +40,10 @@ def transcribe_with_path(path: Path) -> dict:
             no_speech_threshold=0.4,
         )
     except Exception as e:
-        print(f"Error during transcription: {e}")
+        logger.error("transcription failed: %s", e)
         raise
     # openai-whisperは dict を返す
-    print(f"transcribe result: {result}")
+    logger.debug("transcribe result: %s", result)
     text = (result.get("text") or "").strip()
     segs = result.get("segments") or []
     duration = segs[-1]["end"] if segs else None

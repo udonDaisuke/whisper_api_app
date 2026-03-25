@@ -1,0 +1,165 @@
+# ISSUE open 時にエージェントを自動アサインする PoC ワークフロー
+# IMPACT_CATEGORY と ability_weight のスコアリングで最適エージェントを選定する
+name: Auto Assign Agent
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  assign:
+    # [VC] プレフィックスの ISSUE のみ対象
+    if: startsWith(github.event.issue.title, '[VC]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse issue fields
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # IMPACT_CATEGORY を抽出
+          impact=$(echo "$ISSUE_BODY" | grep -m1 '^IMPACT_CATEGORY:' | sed 's/^IMPACT_CATEGORY:[[:space:]]*//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+
+          # ACTION を抽出
+          action=$(echo "$ISSUE_BODY" | grep -m1 '^ACTION:' | sed 's/^ACTION:[[:space:]]*//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+
+          echo "impact_category=${impact}" >> "$GITHUB_OUTPUT"
+          echo "action=${action}" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$impact" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::IMPACT_CATEGORY not found in issue body. Skipping auto-assign."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Select best agent
+        id: select
+        if: steps.parse.outputs.skip != 'true'
+        env:
+          IMPACT_CATEGORY: ${{ steps.parse.outputs.impact_category }}
+          ACTION: ${{ steps.parse.outputs.action }}
+        run: |
+          ROSTER="src/config/agent-roster.json"
+
+          # カテゴリの存在確認
+          if ! jq -e ".category_weights.${IMPACT_CATEGORY}" "$ROSTER" > /dev/null 2>&1; then
+            echo "::warning::Unknown IMPACT_CATEGORY: ${IMPACT_CATEGORY}. Skipping auto-assign."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # スコアリング: ability_weight * category_weights + type_match ボーナス
+          result=$(jq -r --arg cat "$IMPACT_CATEGORY" --arg action "$ACTION" '
+            .category_weights[$cat] as $w |
+            .type_match_bonus as $bonus |
+            [.agents[] | {
+              agent_name,
+              role,
+              raw_score: (
+                (.ability_weight.precision     * $w.precision) +
+                (.ability_weight.autonomy      * $w.autonomy) +
+                (.ability_weight.speed         * $w.speed) +
+                (.ability_weight.perspective   * $w.perspective) +
+                (.ability_weight.collaboration * $w.collaboration)
+              ),
+              type_match: ([.interest_types[] | select(. == $action)] | length > 0)
+            }] |
+            [.[] | .score = (
+              if .type_match
+              then (.raw_score * $bonus * 10 | floor | . / 10)
+              else .raw_score
+              end
+            )] |
+            sort_by(-.score) |
+            {
+              selected: .[0],
+              runner_up: .[1],
+              all_scores: [.[] | {agent_name, score, type_match}]
+            }
+          ' "$ROSTER")
+
+          agent=$(echo "$result" | jq -r '.selected.agent_name')
+          role=$(echo "$result" | jq -r '.selected.role')
+          score=$(echo "$result" | jq -r '.selected.score')
+          type_match=$(echo "$result" | jq -r '.selected.type_match')
+          runner_up=$(echo "$result" | jq -r '.runner_up.agent_name')
+          runner_up_score=$(echo "$result" | jq -r '.runner_up.score')
+
+          {
+            echo "agent=${agent}"
+            echo "role=${role}"
+            echo "score=${score}"
+            echo "type_match=${type_match}"
+            echo "runner_up=${runner_up}"
+            echo "runner_up_score=${runner_up_score}"
+            echo "skip=false"
+          } >> "$GITHUB_OUTPUT"
+
+          # ログ出力
+          echo "Selected: ${agent} (${role}) score=${score} type_match=${type_match}"
+          echo "Runner-up: ${runner_up} score=${runner_up_score}"
+          echo "Full ranking:"
+          echo "$result" | jq -r '.all_scores[] | "  \(.agent_name): \(.score) (type_match=\(.type_match))"'
+
+      - name: Assign agent label
+        if: steps.parse.outputs.skip != 'true' && steps.select.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT: ${{ steps.select.outputs.agent }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          LABEL="agent:${AGENT}"
+
+          # ラベルが存在しなければ作成
+          gh label create "$LABEL" \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "0E8A16" \
+            --description "Assigned to agent: ${AGENT}" 2>/dev/null || true
+
+          # ISSUE にラベル追加
+          gh issue edit "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --add-label "$LABEL"
+
+      - name: Post assignment comment
+        if: steps.parse.outputs.skip != 'true' && steps.select.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT: ${{ steps.select.outputs.agent }}
+          ROLE: ${{ steps.select.outputs.role }}
+          SCORE: ${{ steps.select.outputs.score }}
+          TYPE_MATCH: ${{ steps.select.outputs.type_match }}
+          RUNNER_UP: ${{ steps.select.outputs.runner_up }}
+          RUNNER_UP_SCORE: ${{ steps.select.outputs.runner_up_score }}
+          IMPACT_CATEGORY: ${{ steps.parse.outputs.impact_category }}
+          ACTION: ${{ steps.parse.outputs.action }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          cat <<EOF > /tmp/assign-comment.md
+          ## Agent Auto-Assignment
+
+          | Field | Value |
+          |---|---|
+          | **Assigned Agent** | \`${AGENT}\` (${ROLE}) |
+          | **Score** | ${SCORE} |
+          | **Type Match** | ${TYPE_MATCH} |
+          | **Runner-up** | \`${RUNNER_UP}\` (${RUNNER_UP_SCORE}) |
+          | **IMPACT_CATEGORY** | ${IMPACT_CATEGORY} |
+          | **ACTION** | ${ACTION} |
+
+          > Auto-assigned by \`auto-assign-agent\` workflow.
+          > Scoring: \`ability_weight * category_weights\` + type_match bonus (x1.1).
+          EOF
+
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file /tmp/assign-comment.md

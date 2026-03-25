@@ -1,0 +1,77 @@
+name: "[VC] Agent Escalation"
+description: "エージェントが権限・制約を超えた判断を求める場合（主にエージェントが起票）"
+title: "[VC] escalation: <what decision is needed>"
+labels: ["ESCALATE_TO_HUMAN", "priority:high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## このテンプレートについて
+        エージェントが `ESCALATE_TO_HUMAN` を発行する際に使用する。
+        人間が判断すべき内容を構造化して記録し、決定後に元のISSUEへ書き戻す。
+
+  - type: input
+    id: agent
+    attributes:
+      label: AGENT
+      description: エスカレーションを発行したエージェントID
+      placeholder: "例: auto-fixer"
+    validations:
+      required: true
+
+  - type: input
+    id: issue_ref
+    attributes:
+      label: ISSUE_REF
+      description: 処理中だった元のISSUE番号
+      placeholder: "例: #42"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: escalation_cause
+    attributes:
+      label: ESCALATION_CAUSE
+      description: エスカレーションの原因
+      options:
+        - scope_exceeded
+        - conflict
+        - ambiguous_requirement
+        - security_risk
+        - irreversible_operation
+    validations:
+      required: true
+
+  - type: textarea
+    id: blocked_by
+    attributes:
+      label: BLOCKED_BY
+      description: エージェントが止まった具体的な状況
+      placeholder: "例: 変更影響範囲が LoginController 以外に及ぶことが判明し、CONSTRAINTS に違反するため処理を停止した"
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision_needed
+    attributes:
+      label: DECISION_NEEDED
+      description: 人間に判断を求める内容（具体的に）
+      placeholder: "例: CONSTRAINTS を緩和して AuthMiddleware も変更してよいか、または別ISSUEに分割するか"
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: OPTIONS
+      description: エージェントが検討した選択肢（任意）。複数行は行頭に `- ` を付ける
+      placeholder: |
+        - A: CONSTRAINTS を緩和して AuthMiddleware を同時修正する（影響範囲が広がる）
+        - B: LoginController の変更のみで部分解決し、残りを別ISSUEに分割する
+
+  - type: textarea
+    id: context
+    attributes:
+      label: CONTEXT
+      description: 判断に必要な背景情報（任意）
+      placeholder: "例: AuthMiddleware は別チームが管理しており、変更には確認が必要"

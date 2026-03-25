@@ -1,0 +1,96 @@
+name: "[VC] AI Task Request"
+description: "バグ修正・機能提案・調査依頼をエージェントに依頼する ← 迷ったらこれ"
+title: "[VC] <type>: <description>"
+labels: ["free_task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 記述ガイド
+        - タイトルの `[VC]` プレフィックスは必ず残すこと（絞り込みに使用）
+        - `<type>` には ACTION で選択した値を入れる
+        - `<description>` は50文字以内で変更内容を要約する
+        - ドロップダウン項目は選択肢の説明を参照して適切な値を選ぶ
+
+  - type: input
+    id: scope
+    attributes:
+      label: SCOPE
+      description: 対象モジュール / ディレクトリ（影響範囲分析の起点）。複数ある場合はカンマ区切り
+      placeholder: "例: src/scripts/actions/create-issue.sh, src/scripts/lib/config.sh"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: action
+    attributes:
+      label: ACTION
+      description: >
+        エージェントに求めるアクション:
+        fix=バグ修正・不具合対応 /
+        propose=新機能・改善の提案 /
+        investigate=調査・原因分析 /
+        decide=設計判断・意思決定 /
+        dialogue=複数エージェント間の議論
+      options:
+        - fix
+        - propose
+        - investigate
+        - decide
+        - dialogue
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact_level
+    attributes:
+      label: IMPACT_LEVEL
+      description: >
+        影響の大きさ（priority ラベルに自動変換される）:
+        HIGH=セキュリティ・データ損失・主要機能停止 /
+        MEDIUM=機能改善・DX向上・中規模リファクタ /
+        LOW=軽微な修正・文言変更・ドキュメント更新
+      options:
+        - HIGH
+        - MEDIUM
+        - LOW
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact_category
+    attributes:
+      label: IMPACT_CATEGORY
+      description: >
+        変更がどの品質属性に影響するか:
+        security — セキュリティ・認証・認可・データ保護 /
+        performance — パフォーマンス・処理速度・リソース使用量 /
+        correctness — 正確性・バグ修正・ロジック整合性 /
+        dx — 開発者体験・ツール操作性・入力コスト
+      options:
+        - security
+        - performance
+        - correctness
+        - dx
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: DESCRIPTION
+      description: 現状と理想を4フィールド形式で記述する。制約・具体例があれば含める
+      placeholder: |
+        PRECONDITION_CURRENT: src/scripts/actions/create-issue.sh のウィザード入力が対話型のみで、エージェントがワンショットで起票できない
+        PRECONDITION_DESIRED: #42（next-tasks 実装）が完了し、タスク取得フローが確立していること
+        POSTCONDITION_CURRENT: エージェントは create-issue 実行時に逐次プロンプトへの応答が必要で、自動化できない
+        POSTCONDITION_DESIRED: create-issue に --fields オプションを追加し、JSON またはフラグで全フィールドをワンショット指定できるようにする
+    validations:
+      required: true
+
+  - type: input
+    id: depends_on
+    attributes:
+      label: DEPENDS_ON
+      description: ブロッキングISSUE番号（任意）。カンマ区切りで複数指定可。依存なければ空欄
+      placeholder: "例: #42, #55"

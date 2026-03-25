@@ -1,0 +1,92 @@
+# START_PROCESSING ラベル付与時に dispatch-task を自動実行するワークフロー
+# [VC] プレフィックスの ISSUE に START_PROCESSING ラベルが付与されると起動する
+name: Auto Dispatch Task
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    # START_PROCESSING ラベルが付与された [VC] プレフィックスの ISSUE のみ対象
+    if: |
+      github.event.label.name == 'START_PROCESSING' &&
+      startsWith(github.event.issue.title, '[VC]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Configure vibes auth
+        run: |
+          git config vibes.skipAuth true
+
+      - name: Run dispatch-task
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set +e
+          bash src/scripts/vibes.sh dispatch-task "$ISSUE_NUMBER" \
+            --headless \
+            --skip-permission \
+            2>&1 | tee /tmp/dispatch-output.txt
+          exit_code=${PIPESTATUS[0]}
+          set -e
+
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+          if [ "$exit_code" -eq 0 ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post result comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          STATUS: ${{ steps.dispatch.outputs.status }}
+          EXIT_CODE: ${{ steps.dispatch.outputs.exit_code }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$STATUS" = "success" ]; then
+            result_icon="✅"
+            result_label="Success"
+          else
+            result_icon="❌"
+            result_label="Failure (exit code: ${EXIT_CODE})"
+          fi
+
+          cat <<EOF > /tmp/dispatch-comment.md
+          ## Auto Dispatch Result
+
+          | Field | Value |
+          |---|---|
+          | **Status** | ${result_icon} ${result_label} |
+          | **agent_run_id** | \`${RUN_ID}\` |
+          | **Workflow Run** | [View logs](${RUN_URL}) |
+
+          > Triggered by \`START_PROCESSING\` label via \`auto-dispatch\` workflow.
+          EOF
+
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file /tmp/dispatch-comment.md

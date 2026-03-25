@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "【使い分けガイド】タスク依頼 → AI Task Request / 対話・判断要求 → AI Dialogue Request / 権限外エスカレーション → Agent Escalation"
+    url: https://github.com/udonDaisuke/VibesChain/blob/main/src/docs/ai-issue-workflow.md
+    about: テンプレート選択に迷ったらここを参照
+  - name: タスク管理仕様
+    url: https://github.com/udonDaisuke/VibesChain/blob/main/src/docs/agent-task-management.md
+    about: タスク取得・競合解決・差し戻しフロー
