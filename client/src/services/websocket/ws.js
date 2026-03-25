@@ -11,8 +11,8 @@ class WebsocketService{
       ...options,      
     }
 
-    if (!this.opts.url) throw new Error('url is required');
-    if (!this.opts.wsCtor) throw new Error('No WebSocket constructor available');
+    if (!this.options.url) throw new Error('url is required');
+    if (!this.options.wsCtor) throw new Error('No WebSocket constructor available');
 
         // 状態
     this.ws = null;
