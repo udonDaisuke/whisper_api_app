@@ -1,0 +1,32 @@
+# PR オープン時に review-pr を自動実行するワークフロー
+# [VC] プレフィックスの PR が opened / synchronize になると起動する
+name: Auto Review PR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    # [VC] プレフィックスの PR のみ対象
+    if: startsWith(github.event.pull_request.title, '[VC]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure vibes auth
+        run: |
+          git config vibes.skipAuth true
+
+      - name: Run review-pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash src/scripts/vibes.sh review-pr "${{ github.event.pull_request.number }}" approve

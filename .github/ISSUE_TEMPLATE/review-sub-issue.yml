@@ -1,0 +1,104 @@
+name: "[VC-SUB] Review Sub-Issue"
+description: "PRレビュー差し戻しで発生した修正タスク（エージェントが自動起票）"
+title: "[VC-SUB] #<parent>: <what needs to be fixed>"
+labels: ["sub-issue", "Task", "priority:high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## このテンプレートについて
+        PRレビューで `EVALUATION: Needs_Fix` または `FOLLOWUP: Required` が記録された際に使用する。
+        通常はエージェントが自動作成するが、手動作成時もこのテンプレートを使うこと。
+        タイトルの `#<parent>` には親ISSUEの番号を入れる。
+
+  - type: input
+    id: parent
+    attributes:
+      label: PARENT
+      description: 差し戻し元の親ISSUE番号
+      placeholder: "例: #42"
+    validations:
+      required: true
+
+  - type: input
+    id: pr_ref
+    attributes:
+      label: PR_REF
+      description: 差し戻しされたPR番号
+      placeholder: "例: #87"
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: SCOPE
+      description: 親ISSUEから引き継ぐ対象モジュール / ディレクトリ
+      placeholder: "例: src/auth/LoginController"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: review_result
+    attributes:
+      label: REVIEW_RESULT
+      description: レビューの評価結果
+      options:
+        - Needs_Fix
+        - Technical_Debt_Added
+    validations:
+      required: true
+
+  - type: input
+    id: quality_score
+    attributes:
+      label: QUALITY_SCORE
+      description: レビュー時の品質スコア（1-5）
+      placeholder: "例: 2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: precondition_current
+    attributes:
+      label: PRECONDITION_CURRENT
+      description: レビューで指摘された現在の問題点
+      placeholder: "例: SessionMismatch の原因となるトークン検証が実装されていない"
+    validations:
+      required: true
+
+  - type: textarea
+    id: precondition_desired
+    attributes:
+      label: PRECONDITION_DESIRED
+      description: 処理開始前に満たされているべき条件
+      value: "レビュー指摘がすべて解消されている状態"
+    validations:
+      required: true
+
+  - type: textarea
+    id: postcondition_current
+    attributes:
+      label: POSTCONDITION_CURRENT
+      description: 現在の状態（PRがなぜ通過できないか）
+      placeholder: "例: PR #87 がレビューを通過できていない"
+    validations:
+      required: true
+
+  - type: textarea
+    id: postcondition_desired
+    attributes:
+      label: POSTCONDITION_DESIRED
+      description: 完了条件
+      value: "指摘点を修正したコードがレビューを通過し、親ISSUEがクローズできる状態"
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: EXAMPLE
+      description: レビューコメントから抜粋した指摘内容
+      placeholder: "例: TokenMismatchException が /login 後のリダイレクト時にも発生している（PR #87 コメント参照）"
+    validations:
+      required: true

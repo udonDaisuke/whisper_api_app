@@ -1,0 +1,123 @@
+# ISSUE へのラベル付与イベントをトリガーに vibes label-guard を自動実行するワークフロー
+# 不正遷移の場合はラベルを元に戻し、コメントで理由を通知する
+name: Label Validator
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  validate:
+    # github-actions[bot] 自身のラベル操作によるループを防ぐ
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure vibes auth
+        run: git config vibes.skipAuth true
+
+      - name: Check if label is a required_action label
+        id: check_label
+        env:
+          NEW_LABEL: ${{ github.event.label.name }}
+        run: |
+          rules_file="src/config/label-transitions.json"
+
+          # transitions のキーと initial_allowed に含まれるか確認
+          is_required_action=$(jq \
+            --arg l "$NEW_LABEL" \
+            '([.transitions | keys, .initial_allowed] | flatten | unique | index($l)) != null' \
+            "$rules_file" 2>/dev/null | tr -d '[:space:]')
+
+          echo "is_required_action=${is_required_action}" >> "$GITHUB_OUTPUT"
+          echo "New label: $NEW_LABEL  (required_action: ${is_required_action})"
+
+      - name: Run label-guard
+        id: guard
+        if: steps.check_label.outputs.is_required_action == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          NEW_LABEL: ${{ github.event.label.name }}
+        run: |
+          # label-guard が「遷移前」状態を正しく判定できるよう、新しいラベルを一時除去する
+          # この操作は github-actions[bot] によるものなので上記の if ガードで再トリガーされない
+          echo "Temporarily removing '$NEW_LABEL' from issue #${ISSUE_NUMBER}..."
+          gh issue edit "$ISSUE_NUMBER" --remove-label "$NEW_LABEL"
+
+          # label-guard を実行（終了コード 0=許可, 1=不許可）
+          set +e
+          result=$(bash src/scripts/vibes.sh label-guard "$ISSUE_NUMBER" "$NEW_LABEL" \
+            --rules src/config/label-transitions.json 2>/tmp/guard_stderr.txt)
+          exit_code=$?
+          set -e
+
+          echo "=== label-guard stdout ==="
+          echo "$result"
+          echo "=== label-guard stderr ==="
+          cat /tmp/guard_stderr.txt || true
+
+          allowed=$(echo "$result" | jq -r '.data.allowed // false' 2>/dev/null | tr -d '[:space:]')
+          from_label=$(echo "$result" | jq -r '.data.from // ""' 2>/dev/null | tr -d '[:space:]')
+          error_msg=$(echo "$result" | jq -r '.message // ""' 2>/dev/null)
+
+          echo "allowed=${allowed}"       >> "$GITHUB_OUTPUT"
+          echo "from_label=${from_label}" >> "$GITHUB_OUTPUT"
+          echo "error_msg=${error_msg}"   >> "$GITHUB_OUTPUT"
+          echo "exit_code=${exit_code}"   >> "$GITHUB_OUTPUT"
+
+      - name: Re-add label if transition is valid
+        if: >
+          steps.check_label.outputs.is_required_action == 'true' &&
+          steps.guard.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          NEW_LABEL: ${{ github.event.label.name }}
+        run: |
+          echo "Transition is valid. Re-adding label '$NEW_LABEL' to issue #${ISSUE_NUMBER}..."
+          gh issue edit "$ISSUE_NUMBER" --add-label "$NEW_LABEL"
+          echo "✅ Label '$NEW_LABEL' restored."
+
+      - name: Restore previous label and post rejection comment
+        if: >
+          steps.check_label.outputs.is_required_action == 'true' &&
+          steps.guard.outputs.allowed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          NEW_LABEL: ${{ github.event.label.name }}
+          FROM_LABEL: ${{ steps.guard.outputs.from_label }}
+          ERROR_MSG: ${{ steps.guard.outputs.error_msg }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "Transition is invalid. '$NEW_LABEL' has been removed."
+
+          # 以前のラベルは label-guard が除去していないため、ここでは追加不要
+          # ただし from_label が取得できた場合は念のため復元確認する
+          if [ -n "$FROM_LABEL" ] && [ "$FROM_LABEL" != "(初期状態)" ]; then
+            current_labels=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+            if ! echo "$current_labels" | grep -qF "$FROM_LABEL"; then
+              echo "Restoring previous label '$FROM_LABEL'..."
+              gh issue edit "$ISSUE_NUMBER" --add-label "$FROM_LABEL" 2>/dev/null || true
+            fi
+          fi
+
+          # ISSUE にコメントで理由を通知
+          {
+            printf '⚠️ **ラベル遷移バリデーションエラー**\n\n'
+            printf '@%s が追加したラベル `%s` は現在の状態からの遷移として許可されていません。\n\n' "$ACTOR" "$NEW_LABEL"
+            printf '**理由:** %s\n\n' "$ERROR_MSG"
+            printf 'ラベルは元の状態に戻されました。正しい遷移については `src/config/label-transitions.json` を参照してください。\n\n'
+            printf '> Workflow run: %s\n' "$RUN_URL"
+          } > /tmp/comment_body.txt
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/comment_body.txt
+          echo "❌ Invalid transition. Label reverted and comment posted."

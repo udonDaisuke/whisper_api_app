@@ -1,0 +1,88 @@
+name: "[VC] AI Dialogue Request"
+description: "エージェントが人間の判断を必要とする対話型意思決定（主にエージェントが起票）"
+title: "[VC] dialogue: <topic>"
+labels: ["free_task", "dialogue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 対話型意思決定ISSUE
+        このテンプレートはエージェントが人間に質問し、構造化された回答を受けて処理を継続するワークフロー向けです。
+        詳細は `src/docs/dialogue-protocol.md` を参照してください。
+
+  - type: input
+    id: responder
+    attributes:
+      label: RESPONDER
+      description: 回答権を持つ GitHub ユーザー名。このユーザーのコメントのみが最終回答として処理される
+      placeholder: "例: githubUsername"
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: SCOPE
+      description: 対象モジュール / ディレクトリ
+      placeholder: "例: src/deploy/"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: CONTEXT
+      description: 対話の背景・目的。エージェントが状況を理解するための情報
+      placeholder: |
+        例: デプロイ先環境の選択について人間の判断が必要です。
+        現在 staging と production の両方が候補として挙がっており、
+        影響範囲の観点からエージェント単独では決定できません。
+    validations:
+      required: true
+
+  - type: textarea
+    id: question_block
+    attributes:
+      label: QUESTION_BLOCK
+      description: |
+        エージェントが人間に問いかける質問。dialogue-protocol.md の QUESTION_BLOCK 形式で記述してください。
+        RESPONDER はこのブロックを見て、コメントで ANSWER_BLOCK を返します。
+      placeholder: |
+        QUESTION_ID: Q-001
+        CONTEXT: デプロイ先環境を確定するための質問です。
+
+        ITEMS:
+        - [REQUIRED] DEPLOY_TARGET: デプロイ先環境（production / staging）
+        - [REQUIRED] ROLLBACK_PLAN: 問題発生時のロールバック手順
+        - [OPTIONAL] NOTIFY_SLACK: Slack 通知チャンネル名
+
+        ANSWER_FORMAT:
+        以下のフォーマットでコメントを投稿してください:
+
+        ```
+        QUESTION_ID: Q-001
+        DEPLOY_TARGET: <production または staging>
+        ROLLBACK_PLAN: <手順を記述>
+        NOTIFY_SLACK: <チャンネル名（任意）>
+        END_ANSWER
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: postcondition_desired
+    attributes:
+      label: POSTCONDITION_DESIRED
+      description: 回答を受けてエージェントが完了すべき処理
+      placeholder: "例: DEPLOY_TARGET に指定された環境へのデプロイを実行し、結果をこのISSUEにコメントする"
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: CONSTRAINTS
+      description: 制約・禁止事項（任意）
+      placeholder: |
+        - production へのデプロイは営業時間内（9:00-18:00 JST）のみ
+        - データベースマイグレーションを伴う場合は別途承認が必要

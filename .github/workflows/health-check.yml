@@ -1,0 +1,102 @@
+# 毎日 UTC 00:00 に vibes check-health を実行し、異常検出時は tracking ISSUE へ通知するワークフロー
+name: Health Check
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      tracking_issue:
+        description: '異常通知先の tracking ISSUE 番号（省略時は tracking:health ラベルで自動検索）'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure vibes auth
+        run: git config vibes.skipAuth true
+
+      - name: Find tracking ISSUE
+        id: tracking
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRACKING_ISSUE_INPUT: ${{ inputs.tracking_issue }}
+        run: |
+          if [ -n "$TRACKING_ISSUE_INPUT" ]; then
+            echo "issue_number=$TRACKING_ISSUE_INPUT" >> "$GITHUB_OUTPUT"
+            echo "Found tracking ISSUE (from input): #${TRACKING_ISSUE_INPUT}"
+          else
+            issue_number=$(gh issue list \
+              --label "tracking:health" \
+              --state open \
+              --limit 1 \
+              --json number \
+              --jq '.[0].number // empty' 2>/dev/null || true)
+            echo "issue_number=${issue_number}" >> "$GITHUB_OUTPUT"
+            if [ -n "$issue_number" ]; then
+              echo "Found tracking ISSUE (from label): #${issue_number}"
+            else
+              echo "No tracking ISSUE found. Anomaly notification will be skipped."
+            fi
+          fi
+
+      - name: Run check-health
+        id: health
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRACKING_ISSUE: ${{ steps.tracking.outputs.issue_number }}
+        run: |
+          set +e
+          if [ -n "$TRACKING_ISSUE" ]; then
+            bash src/scripts/vibes.sh check-health --markdown --notify-issue "$TRACKING_ISSUE" \
+              > /tmp/health-result.json
+          else
+            bash src/scripts/vibes.sh check-health --markdown \
+              > /tmp/health-result.json
+          fi
+          exit_code=$?
+          set -e
+
+          cat /tmp/health-result.json
+
+          overall=$(jq -r '.data.overall // "unknown"' /tmp/health-result.json 2>/dev/null || echo "unknown")
+          summary_ok=$(jq -r '.data.summary.ok // 0' /tmp/health-result.json 2>/dev/null || echo "0")
+          summary_warn=$(jq -r '.data.summary.warn // 0' /tmp/health-result.json 2>/dev/null || echo "0")
+          summary_error=$(jq -r '.data.summary.error // 0' /tmp/health-result.json 2>/dev/null || echo "0")
+
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          echo "overall=${overall}" >> "$GITHUB_OUTPUT"
+          echo "summary=OK:${summary_ok} WARN:${summary_warn} ERROR:${summary_error}" >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "=== Health Check Result ==="
+          echo "Overall: ${overall}"
+          echo "Summary: OK=${summary_ok} WARN=${summary_warn} ERROR=${summary_error}"
+
+      - name: Report result
+        if: always()
+        env:
+          OVERALL: ${{ steps.health.outputs.overall }}
+          SUMMARY: ${{ steps.health.outputs.summary }}
+          TRACKING_ISSUE: ${{ steps.tracking.outputs.issue_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$OVERALL" = "ok" ]; then
+            echo "✅ Health check passed. ${SUMMARY}"
+          else
+            echo "⚠️  Health check detected anomalies (overall: ${OVERALL}). ${SUMMARY}"
+            if [ -n "$TRACKING_ISSUE" ]; then
+              echo "Anomaly notification posted to ISSUE #${TRACKING_ISSUE}."
+            fi
+            echo "Workflow run: ${RUN_URL}"
+          fi
