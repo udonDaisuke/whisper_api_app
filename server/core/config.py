@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     COMPUTE_TYPE: str = "int8"
     XDG_CACHE_HOME: str = "/cache"
     UPLOAD_CHUNK_BYTES: int = 1024 * 1024
+    VAD_SILENCE_THRESHOLD: float = 200.0
 
     class Config:
         env_file = ".env"
