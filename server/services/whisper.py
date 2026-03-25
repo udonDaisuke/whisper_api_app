@@ -24,14 +24,14 @@ def _get_model() -> whisper.Whisper:
         )
     return _model
 
-def transcribe_with_path(path: Path) -> dict:
+def transcribe_with_path(path: Path, *, language: str | None = None) -> dict:
     model = _get_model()
     logger.debug("transcribe target path exists: %s", path.exists())
     try:
         result = model.transcribe(
             str(path),
-            language="ja",   # 例
-            fp16=False,      # CPUなら False 推奨
+            language=language,  # None の場合は Whisper が自動検出
+            fp16=False,         # CPU なら False 推奨
             task="transcribe",
             # 分割ストリーミング用
             condition_on_previous_text=False,

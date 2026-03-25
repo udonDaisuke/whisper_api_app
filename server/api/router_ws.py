@@ -1,5 +1,6 @@
 # app/api/ws.py
 import logging
+import os
 import tempfile
 import wave
 from pathlib import Path
@@ -107,21 +108,32 @@ async def ws_transcribe_audio(ws:WebSocket):
                         part = bytes(buf[:chunk_bytes])
                         del buf[:chunk_bytes]
 
-                        with tempfile.NamedTemporaryFile(suffix=".wav",dir="/data/tmp", delete=False) as tmp:
-                            write_pcm16_wav(tmp.name, part, sr=sr)
-                            logger.debug("tmp wav path: %s", tmp.name)
-                            # あなたの transcribe_with_path は Path だけ受け取る想定
-                            result = transcribe_with_path(Path(tmp.name))
+                        tmp_path: str | None = None
+                        try:
+                            with tempfile.NamedTemporaryFile(suffix=".wav", dir="/data/tmp", delete=False) as tmp:
+                                tmp_path = tmp.name
+                            write_pcm16_wav(tmp_path, part, sr=sr)
+                            logger.debug("tmp wav path: %s", tmp_path)
+                            result = transcribe_with_path(Path(tmp_path), language=lang)
                             logger.debug("transcribe result: %s", result)
+                        finally:
+                            if tmp_path and os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
                         await ws.send_json({"type": "partial", "text": result["text"]})
                 elif (t:=msg.get("text")) is not None:
                     # 制御用メッセージ
                     if t == "flush":
                         # 残りをまとめて認識
                         if buf:
-                            with tempfile.NamedTemporaryFile(suffix=".wav", dir="/data/tmp", delete=False) as tmp:
-                                write_pcm16_wav(tmp.name, bytes(buf), sr=sr)
-                                result = transcribe_with_path(Path(tmp.name))
+                            tmp_path = None
+                            try:
+                                with tempfile.NamedTemporaryFile(suffix=".wav", dir="/data/tmp", delete=False) as tmp:
+                                    tmp_path = tmp.name
+                                write_pcm16_wav(tmp_path, bytes(buf), sr=sr)
+                                result = transcribe_with_path(Path(tmp_path), language=lang)
+                            finally:
+                                if tmp_path and os.path.exists(tmp_path):
+                                    os.unlink(tmp_path)
                             await ws.send_json({"type": "partial", "text": result["text"]})
                             buf.clear()
                         await ws.send_json({"type": "done"})
