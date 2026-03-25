@@ -41,3 +41,4 @@
 | [02_current_status.md](./02_current_status.md) | 実装済み機能・既知バグ一覧 |
 | [03_roadmap.md](./03_roadmap.md) | 開発ロードマップ・フェーズ計画 |
 | [04_tech_stack.md](./04_tech_stack.md) | 技術スタック・依存関係 |
+| [05_infrastructure_cost.md](./05_infrastructure_cost.md) | インフラコスト見積もり (自宅 vs VPS) |
